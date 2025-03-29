@@ -1,0 +1,37 @@
+# Type signatures for MitchAI gem
+
+module MitchAI
+  VERSION: String
+
+  class Error < StandardError
+  end
+
+  class Configuration
+    attr_accessor api_key: String?
+    attr_accessor provider: Symbol
+    attr_accessor languages: Array[Symbol]
+    attr_accessor log_level: Integer
+
+    def initialize: () -> void
+  end
+
+  module AIProviders
+    class OpenAIProvider
+      def initialize: (?api_key: String?) -> void
+      def analyze_code: (String code, String language) -> Hash[Symbol, untyped]
+    end
+  end
+
+  module Analyzers
+    class FileAnalyzer
+      LANGUAGE_MAP: Hash[String, String]
+
+      def initialize: (String file_path) -> void
+      def analyze: () -> Hash[Symbol, untyped]
+    end
+  end
+
+  class CLI < Thor
+    def review: (String path) -> void
+  end
+end

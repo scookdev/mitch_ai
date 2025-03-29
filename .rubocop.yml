@@ -1,0 +1,21 @@
+inherit_from: .rubocop_todo.yml
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - "sig/**/*.rbs"
+
+Style/Documentation:
+  Enabled: false
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+
+Layout/LineLength:
+  Max: 120
+
+Style/StringLiterals:
+  Enabled: true
+  EnforcedStyle: single_quotes
