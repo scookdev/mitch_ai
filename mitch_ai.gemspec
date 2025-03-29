@@ -5,12 +5,12 @@ require 'mitch_ai/version'
 Gem::Specification.new do |spec|
   spec.name          = 'mitch_ai'
   spec.version       = MitchAI::VERSION
-  spec.authors       = ['Your Name']
-  spec.email         = ['your.email@example.com']
+  spec.authors       = ['Steve Cook']
+  spec.email         = ['stevorevo@duck.com']
 
   spec.summary       = 'AI-powered code review assistant'
   spec.description   = 'A CLI tool that uses AI to provide intelligent code reviews'
-  spec.homepage      = 'https://github.com/yourusername/mitch_ai'
+  spec.homepage      = 'https://github.com/scookdev/mitch_ai'
   spec.license       = 'MIT'
 
   spec.files         = Dir.chdir(File.expand_path('..', __FILE__)) do
