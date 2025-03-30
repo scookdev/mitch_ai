@@ -55,7 +55,7 @@ bundle exec rubocop
 
 ## 🌟 Code of Conduct
 
-Be respectful, inclusive, and constructive. We welcome contributions from everyone!
+Be respectful, inclusive, and constructive. I welcome contributions from everyone!
 
 ## 📝 Code Style
 

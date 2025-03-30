@@ -2,10 +2,10 @@
 
 ## Our Pledge
 
-We are committed to providing a friendly, safe, and welcoming environment for all
+I am committed to providing a friendly, safe, and welcoming environment for all
 contributors.
 
-## Our Standards
+## Standards
 
 ### Positive Behavior Includes
 
@@ -20,11 +20,6 @@ contributors.
 - Personal or political attacks
 - Public or private harassment
 - Publishing others' private information without permission
-
-## Enforcement
-
-Instances of unacceptable behavior may be reported by contacting the project team.
-All complaints will be reviewed and investigated.
 
 ## Attribution
 
