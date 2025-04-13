@@ -1,7 +1,10 @@
+# frozen_string_literal: true
+
 lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 require 'mitch_ai/version'
 
+# rubocop:disable Metrics/BlockLength
 Gem::Specification.new do |spec|
   spec.name          = 'mitch-ai'
   spec.version       = MitchAI::VERSION
@@ -9,7 +12,9 @@ Gem::Specification.new do |spec|
   spec.email         = ['stevorevo@duck.com']
 
   spec.summary       = 'AI-powered code review assistant'
-  spec.description   = 'A CLI tool that uses AI to provide intelligent code reviews'
+  spec.description = 'MitchAI is an intelligent CLI tool that leverages artificial intelligence to ' \
+                     'provide comprehensive code reviews, helping developers improve code quality, ' \
+                     'catch potential issues, and receive actionable insights.'
   spec.homepage      = 'https://github.com/scookdev/mitch_ai'
   spec.license       = 'MIT'
 
@@ -35,3 +40,4 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'steep', '~> 1.5'
   spec.add_development_dependency 'pry-byebug', '~> 3.10'
 end
+# rubocop:enable Metrics/BlockLength
