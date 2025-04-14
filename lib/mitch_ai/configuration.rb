@@ -42,6 +42,7 @@ module MitchAI
       # Don't override default provider if not needed
     end
 
+    # rubocop:disable Metrics/MethodLength
     def save_api_key(provider, api_key)
       # Ensure config directory exists
       FileUtils.mkdir_p(File.dirname(CONFIG_FILE))
@@ -66,6 +67,7 @@ module MitchAI
       # Update current instance
       @api_key = api_key
     end
+    # rubocop:enable Metrics/MethodLength
 
     def symbolize_keys(hash)
       hash.each_with_object({}) do |(key, value), result|

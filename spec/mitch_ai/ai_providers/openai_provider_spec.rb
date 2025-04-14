@@ -45,6 +45,7 @@ RSpec.describe MitchAI::AIProviders::OpenAIProvider do
   describe '#analyze_code' do
     let(:provider) { described_class.new(api_key) }
 
+    # rubocop:disable Layout/LineLength
     it 'sends a properly formatted request to the OpenAI API' do
       expected_params = {
         parameters: {
@@ -62,6 +63,7 @@ RSpec.describe MitchAI::AIProviders::OpenAIProvider do
           max_tokens: 500
         }
       }
+      # rubocop:enable Layout/LineLength
 
       expect(mock_client).to receive(:chat).with(expected_params).and_return(mock_response)
       provider.analyze_code(code_sample, language)

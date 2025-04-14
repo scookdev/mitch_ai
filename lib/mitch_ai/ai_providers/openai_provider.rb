@@ -10,6 +10,7 @@ module MitchAI
         @client = OpenAI::Client.new(access_token: @api_key)
       end
 
+      # rubocop:disable Metrics/MethodLength, Layout/LineLength
       def analyze_code(code, language)
         response = @client.chat(
           parameters: {
@@ -30,6 +31,7 @@ module MitchAI
 
         parse_review_response(response)
       end
+      # rubocop:enable Metrics/MethodLength, Layout/LineLength
 
       private
 

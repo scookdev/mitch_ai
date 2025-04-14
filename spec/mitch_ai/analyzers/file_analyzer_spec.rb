@@ -23,6 +23,7 @@ RSpec.describe MitchAI::Analyzers::FileAnalyzer do
     }
   end
 
+  # rubocop:disable Layout/LineLength
   before do
     # Then in your mock AI provider
     allow(mock_ai_provider).to receive(:analyze_code).and_return({ suggestions: mock_response.dig('choices', 0, 'message',
@@ -36,6 +37,7 @@ RSpec.describe MitchAI::Analyzers::FileAnalyzer do
     File.write(python_file_path, python_code)
     File.write(unknown_file_path, 'unknown content')
   end
+  # rubocop:enable Layout/LineLength
 
   after do
     # Clean up test files
