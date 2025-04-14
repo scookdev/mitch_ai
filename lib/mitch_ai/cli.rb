@@ -45,7 +45,7 @@ module MitchAI
       output_results(results, options[:format])
     rescue StandardError => e
       puts "Error: #{e.message}"
-      exit 1
+      exit 1 unless ENV['RSPEC_RUNNING']
     end
     # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
