@@ -3,6 +3,7 @@
 require 'thor'
 # Remove require 'linguist'
 require 'json'
+require 'tty-spinner'
 require_relative 'configuration'
 require_relative 'analyzers/file_analyzer'
 
@@ -28,9 +29,10 @@ module MitchAI
       # Analyze each file - let FileAnalyzer handle language detection
       # Analyze each file
       results = paths.map do |file_path|
-        puts "Trying to analyze #{file_path}"
+        spinner = TTY::Spinner.new("[:spinner] Analyzing #{file_path}", format: :dots)
+        spinner.auto_spin
+        # puts "Trying to analyze #{file_path}"
         analyzer = Analyzers::FileAnalyzer.new(file_path)
-        puts 'Analyzer initialized successfully'
         result = analyzer.analyze
         puts "Analysis complete for #{file_path}"
         result
