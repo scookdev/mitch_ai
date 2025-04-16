@@ -34,7 +34,20 @@ module MitchAI
         # puts "Trying to analyze #{file_path}"
         analyzer = Analyzers::FileAnalyzer.new(file_path)
         result = analyzer.analyze
-        puts "Analysis complete for #{file_path}"
+
+        # Language-specific success messages
+        language_messages = {
+          'Ruby' => ['Gemtastic! 💎', 'Rubylicious! 💎', 'Rubyastic! 🚂'],
+          'Go' => ["We're gophering it! 🦫", 'Gopher approved!'],
+          'Java' => ['That is delicious brew ☕️', 'Java-checked!'],
+          'Python' => ['Sssssuper! 🐍', 'Pynomenal! 🐍', 'Snake charmed! 🎵'],
+          'TypeScript' => ['Type-checked! 🚀', 'Typorama!'],
+          'default' => ['Code reviewed! ✅', 'Finito! ✨', 'Mitch approves! 👍']
+        }
+        language = result[:language] || 'default'
+        message_options = language_messages[language] || language_messages['default']
+        spinner.success(message_options.sample)
+
         result
       rescue StandardError => e
         puts "Error during analysis: #{e.class}: #{e.message}"
@@ -46,8 +59,11 @@ module MitchAI
       # Output results
       output_results(results, options[:format])
     rescue StandardError => e
-      puts "Error: #{e.message}"
-      exit 1 unless ENV['RSPEC_RUNNING']
+      # Stop the spinner with error message if there's an exception
+      spinner.error('(Error!)') if defined?(spinner) && spinner
+      puts "Error during analysis: #{e.class}: #{e.message}"
+      puts e.backtrace[0..5] if options[:verbose]
+      nil
     end
     # rubocop:enable Metrics/AbcSize, Metrics/MethodLength, Metrics/PerceivedComplexity, Metrics/CyclomaticComplexity
 
