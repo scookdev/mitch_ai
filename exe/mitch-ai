@@ -1,6 +1,15 @@
-# !/usr/bin/env ruby
+#!/usr/bin/env ruby
 
-require 'bundler/setup'
-require 'mitch_ai'
+gem_root = File.expand_path('..', File.dirname(__FILE__))
+lib_path = File.join(gem_root, 'lib')
+
+$LOAD_PATH.unshift(lib_path) unless $LOAD_PATH.include?(lib_path)
+
+begin
+  require 'mitch_ai'
+rescue LoadError => e
+  puts "Failed to load: #{e.message}"
+  exit 1
+end
 
 MitchAI::CLI.start(ARGV)

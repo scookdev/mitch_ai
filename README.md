@@ -27,22 +27,23 @@ catch potential issues, and receive actionable insights.
 ## 🛠️ Installation
 
 ```bash
-gem install mitch_ai
+gem install mitch-ai
 ```
 
 ## 💡 Usage
 
 ```bash
 # Review a single file
-mitch_ai review file.rb
+mitch-ai review ./path/to/file.rb
+mitch-ai review ./path/to/file.tsx
 
 # Review entire project directory
-mitch_ai review ./project
+mitch-ai review ./project
 ```
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please check out our [Contributing Guidelines](CONTRIBUTING.md).
+Contributions are welcome! Please check out [Contributing Guidelines](CONTRIBUTING.md).
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)

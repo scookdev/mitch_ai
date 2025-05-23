@@ -20,10 +20,13 @@ RSpec.describe MitchAI::CLI do
         end
       end
 
+      # rubocop:disable Layout/LineLength
       it 'processes a ruby file' do
-        # Instead of looking for "Ruby", check for the actual output
-        expect { cli.review(sample_file) }.to output(/Analyzer initialized successfully/).to_stdout
+        expect do
+          cli.review(sample_file)
+        end.to output(%r{Found 1 files to analyze\nResults for Ruby file: /Users/stevecook/src/mitch_ai/spec/fixtures/sample.rb}).to_stdout
       end
+      # rubocop:enable Layout/LineLength
     end
 
     context 'without API key' do

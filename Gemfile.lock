@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    mitch-ai (0.3.0)
+    mitch-ai (0.4.0)
       ruby-openai (~> 3.7)
       thor (~> 1.2)
       tty-spinner (~> 0.9.3)
