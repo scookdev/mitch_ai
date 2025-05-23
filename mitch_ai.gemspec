@@ -28,7 +28,7 @@ Gem::Specification.new do |spec|
 
   # Dependencies
   spec.add_dependency 'thor', '~> 1.2'
-  spec.add_dependency 'ruby-openai', '~> 3.7'
+  spec.add_dependency 'ruby-openai', '>= 3.7', '< 9.0'
   spec.add_dependency 'tty-spinner', '~> 0.9.3'
 
   # Development dependencies
