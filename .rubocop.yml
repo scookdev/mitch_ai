@@ -22,3 +22,11 @@ Style/StringLiterals:
 
 Layout/TrailingEmptyLines:
   Enabled: false
+
+Naming/FileName:
+  Exclude:
+    - "exe/*"
+
+Layout/LeadingCommentSpace:
+  Exclude:
+    - "exe/*"

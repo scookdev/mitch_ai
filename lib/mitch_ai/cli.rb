@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require 'thor'
-# Remove require 'linguist'
 require 'json'
 require 'tty-spinner'
 require_relative 'configuration'
@@ -26,35 +25,19 @@ module MitchAI
                 [path]
               end
 
-      # Analyze each file - let FileAnalyzer handle language detection
-      # Analyze each file
       results = paths.map do |file_path|
-        spinner = TTY::Spinner.new("[:spinner] Analyzing #{file_path}", format: :dots)
+        spinner = TTY::Spinner.new("[:spinner] Analyzing #{file_path}...", format: :dots)
         spinner.auto_spin
-        # puts "Trying to analyze #{file_path}"
+
         analyzer = Analyzers::FileAnalyzer.new(file_path)
         result = analyzer.analyze
-
-        # Language-specific success messages
-        language_messages = {
-          'Ruby' => ['Gemtastic! 💎', 'Rubylicious! 💎', 'Rubyastic! 🚂'],
-          'Go' => ["We're gophering it! 🦫", 'Gopher approved!'],
-          'Java' => ['That is delicious brew ☕️', 'Java-checked!'],
-          'Python' => ['Sssssuper! 🐍', 'Pynomenal! 🐍', 'Snake charmed! 🎵'],
-          'TypeScript' => ['Type-checked! 🚀', 'Typorama!'],
-          'default' => ['Code reviewed! ✅', 'Finito! ✨', 'Mitch approves! 👍']
-        }
-        language = result[:language] || 'default'
-        message_options = language_messages[language] || language_messages['default']
-        spinner.success(message_options.sample)
-
+        spinner.success('✅ Done')
         result
       rescue StandardError => e
-        puts "Error during analysis: #{e.class}: #{e.message}"
-        puts e.backtrace[0..5] if options[:verbose]
+        puts "❌ Error: #{e.message}"
         nil
       end.compact
-      puts "Found #{results.length} files to analyze"
+      puts "\nFound #{results.length} files to analyze\n\n"
 
       # Output results
       output_results(results, options[:format])
