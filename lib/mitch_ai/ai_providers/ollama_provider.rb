@@ -4,7 +4,7 @@ require 'openai'
 
 module MitchAI
   module AIProviders
-    class OpenAIProvider
+    class OllamaProvider
       def initialize(api_key = nil)
         @api_key = api_key || ENV.fetch('OPENAI_API_KEY', nil)
         @client = OpenAI::Client.new(access_token: @api_key)

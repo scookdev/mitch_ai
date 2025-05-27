@@ -1,0 +1,312 @@
+#!/usr/bin/env ruby
+
+# frozen_string_literal: true
+
+require 'optparse'
+require 'mitch_ai'
+
+class MitchAICLI
+  def initialize
+    @options = {
+      model: 'deepseek-coder:6.7b',
+      mcp_port: 4568,
+      ollama_url: 'http://localhost:11434'
+    }
+  end
+
+  def run(args)
+    parser = OptionParser.new do |opts|
+      opts.banner = 'Usage: mitch-ai [command] [options]'
+
+      opts.on('-m', '--model MODEL', 'Ollama model to use') { |m| @options[:model] = m }
+      opts.on('-p', '--port PORT', 'MCP server port') { |p| @options[:mcp_port] = p.to_i }
+      opts.on('-h', '--help', 'Show help') do
+        puts opts
+        exit
+      end
+    end
+
+    parser.parse!(args)
+    command = args.shift
+
+    case command
+    when 'setup'
+      setup_environment
+    when 'server'
+      start_mcp_server
+    when 'review'
+      review_code(args)
+    when 'status'
+      check_status
+    when 'models'
+      list_models
+    when 'pull'
+      pull_model(args.first)
+    when 'health'
+      health_check
+    else
+      puts 'Commands:'
+      puts '  setup           - Complete environment setup'
+      puts '  review <path>   - Review code (file, directory, or git range)'
+      puts '  status          - Check system status'
+      puts '  models          - List available models'
+      puts '  pull <model>    - Download a specific model'
+      puts '  health          - Run health check'
+      puts '  server          - Start MCP server manually'
+      puts ''
+      puts "Run 'mitch-ai --help' for options"
+    end
+  end
+
+  private
+
+  def setup_environment
+    require 'mitch_ai/ollama_manager'
+
+    puts '🚀 Setting up Mitch-AI environment...'
+
+    ollama_manager = MitchAI::OllamaManager.new
+
+    # Interactive model selection
+    puts "\n🤖 Let's set up your AI model!"
+    model = ollama_manager.select_model_interactively
+    @options[:model] = model
+
+    # Complete Ollama setup (install, start, pull model)
+    ollama_manager.setup!(model: model)
+
+    # Start MCP server in background
+    puts "🔧 Starting MCP server on port #{@options[:mcp_port]}..."
+    start_mcp_server_background
+
+    puts "\n🎉 Setup complete!"
+    puts "   Model: #{model}"
+    puts '   You can now use: mitch-ai review <path>'
+    puts '   Try: mitch-ai review --help'
+  end
+
+  def start_mcp_server
+    puts "🔧 Starting MCP server on port #{@options[:mcp_port]}..."
+    require 'mitch_ai/mcp_server'
+    MitchAI::MCPServer.start!(@options[:mcp_port])
+  end
+
+  def start_mcp_server_background
+    mcp_server_path = File.join(__dir__, '..', 'lib', 'mitch_ai', 'mcp_server.rb')
+    spawn("ruby #{mcp_server_path} #{@options[:mcp_port]}")
+
+    # Wait for server to start
+    3.times do
+      sleep(1)
+      if mcp_server_running?
+        puts '✅ MCP server started'
+        return
+      end
+    end
+
+    puts '❌ Failed to start MCP server'
+  end
+
+  def review_code(args)
+    target = args.first
+
+    unless target
+      puts '❌ Please specify a file or directory to review'
+      puts 'Example: mitch-ai review ./my_project'
+      return
+    end
+
+    # Ensure servers are running
+    unless ollama_running? && mcp_server_running?
+      puts '🔄 Starting required services...'
+      system('mitch-ai setup')
+    end
+
+    puts "🔍 Reviewing #{target}..."
+
+    begin
+      reviewer = MitchAI::EnhancedReviewer.new(
+        model: @options[:model],
+        mcp_server_url: "http://localhost:#{@options[:mcp_port]}"
+      )
+
+      result = if File.file?(target)
+                 reviewer.review_file(target)
+               elsif File.directory?(target)
+                 reviewer.review_project(target)
+               elsif target.include?('..')
+                 # Looks like git range
+                 reviewer.review_git_changes(target)
+               else
+                 puts "❌ Unknown target: #{target}"
+                 return
+               end
+
+      display_review_result(result)
+    rescue StandardError => e
+      puts "❌ Review failed: #{e.message}"
+      puts "💡 Try running 'mitch-ai status' to check your setup"
+    end
+  end
+
+  def check_status
+    require 'mitch_ai/ollama_manager'
+
+    puts '📊 Mitch-AI Status Check'
+    puts '=' * 50
+
+    ollama_manager = MitchAI::OllamaManager.new
+    status = ollama_manager.health_check
+
+    puts "\n💡 Commands:"
+    if !status[:ollama_installed]
+      puts '   Run: mitch-ai setup'
+    elsif !status[:ollama_running]
+      puts '   Run: ollama serve'
+    elsif status[:available_models].empty?
+      puts "   Run: mitch-ai pull #{status[:recommended_model]}"
+    else
+      puts '   Ready! Try: mitch-ai review <file>'
+    end
+  end
+
+  def list_models
+    require 'mitch_ai/ollama_manager'
+
+    ollama_manager = MitchAI::OllamaManager.new
+    models = ollama_manager.available_models
+
+    puts '🧠 Available Models:'
+    if models.empty?
+      puts '   No models installed'
+      puts '   Run: mitch-ai pull deepseek-coder:6.7b'
+    else
+      models.each do |model|
+        current = model == @options[:model] ? ' (current)' : ''
+        puts "   #{model}#{current}"
+      end
+    end
+
+    puts "\n📥 Popular models to try:"
+    puts '   mitch-ai pull deepseek-coder:6.7b    # Recommended'
+    puts '   mitch-ai pull codellama:7b           # Alternative'
+    puts '   mitch-ai pull deepseek-coder:33b     # Best quality'
+  end
+
+  def pull_model(model)
+    unless model
+      puts '❌ Please specify a model to pull'
+      puts 'Example: mitch-ai pull deepseek-coder:6.7b'
+      return
+    end
+
+    require 'mitch_ai/ollama_manager'
+
+    ollama_manager = MitchAI::OllamaManager.new
+
+    # Ensure Ollama is running
+    unless ollama_manager.ollama_running?
+      puts '🔄 Starting Ollama...'
+      ollama_manager.start_ollama!
+    end
+
+    ollama_manager.pull_model!(model)
+    puts "✅ Model #{model} is ready!"
+  end
+
+  def health_check
+    require 'mitch_ai/ollama_manager'
+
+    ollama_manager = MitchAI::OllamaManager.new
+    ollama_manager.health_check
+
+    # Also check MCP server
+    puts "\n🔧 MCP Server:"
+    if mcp_server_running?
+      puts "   Status: ✅ Running on port #{@options[:mcp_port]}"
+    else
+      puts '   Status: ❌ Not running'
+      puts '   Fix: mitch-ai server'
+    end
+  end
+
+  def display_review_result(result)
+    puts "\n" + ('=' * 60)
+    puts '📝 MITCH-AI CODE REVIEW REPORT'
+    puts '=' * 60
+
+    if result[:project_path]
+      # Project review
+      puts "📁 Project: #{result[:project_path]}"
+      puts "📊 Files reviewed: #{result[:total_files]}"
+
+      if result[:summary]
+        puts "\n🎯 SUMMARY:"
+        puts "   Average score: #{result[:summary][:average_score] || 'N/A'}"
+        puts "   Total issues: #{result[:summary][:total_issues_found] || 'N/A'}"
+      end
+
+    elsif result[:file_path]
+      # Single file review
+      puts "📄 File: #{result[:file_path]}"
+
+      if result[:ai_review]
+        review = result[:ai_review]
+        puts "\n🎯 SCORE: #{review['score'] || 'N/A'}/10"
+
+        if review['issues']&.any?
+          puts "\n🚨 ISSUES FOUND:"
+          review['issues'].each_with_index do |issue, i|
+            puts "   #{i + 1}. #{issue}"
+          end
+        end
+
+        if review['suggestions']&.any?
+          puts "\n💡 SUGGESTIONS:"
+          review['suggestions'].each_with_index do |suggestion, i|
+            puts "   #{i + 1}. #{suggestion}"
+          end
+        end
+
+        if review['positive_aspects']&.any?
+          puts "\n✅ POSITIVE ASPECTS:"
+          review['positive_aspects'].each_with_index do |aspect, i|
+            puts "   #{i + 1}. #{aspect}"
+          end
+        end
+
+        if review['summary']
+          puts "\n📋 SUMMARY:"
+          puts "   #{review['summary']}"
+        end
+      end
+
+    elsif result[:commit_range]
+      # Git changes review
+      puts "🔄 Git Range: #{result[:commit_range]}"
+      puts "📊 Changed files: #{result[:changed_files]&.length || 0}"
+
+      if result[:diff_summary]
+        diff = result[:diff_summary]
+        puts "   +#{diff[:additions]} lines, -#{diff[:deletions]} lines"
+      end
+    end
+
+    puts "\n" + ('=' * 60)
+    puts "⏰ Review completed at #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
+  end
+
+  def ollama_running?
+    system('curl -s http://localhost:11434/api/version > /dev/null 2>&1')
+  end
+
+  def mcp_server_running?
+    system("curl -s http://localhost:#{@options[:mcp_port]}/status > /dev/null 2>&1")
+  end
+end
+
+# Run the CLI
+if __FILE__ == $0
+  cli = MitchAICLI.new
+  cli.run(ARGV)
+end
