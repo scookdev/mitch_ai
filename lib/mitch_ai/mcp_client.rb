@@ -14,14 +14,8 @@ module MitchAI
     def call_tool(name, arguments = {})
       @request_id += 1
 
-      message = {
-        jsonrpc: '2.0',
-        method: 'tools/call',
-        params: { name: name, arguments: arguments },
-        id: @request_id
-      }
-
       uri = URI("#{@server_url}/mcp")
+      message = message_for(name, arguments)
       response = Net::HTTP.post(uri, message.to_json, 'Content-Type' => 'application/json')
       result = JSON.parse(response.body)
 
@@ -30,7 +24,6 @@ module MitchAI
       result.dig('result', 'content', 0, 'text')
     end
 
-    # File operations via MCP
     def read_file(path)
       call_tool('read_file', { path: path })
     end
@@ -49,6 +42,17 @@ module MitchAI
 
     def analyze_complexity(path)
       JSON.parse(call_tool('analyze_complexity', { path: path }))
+    end
+
+    private
+
+    def message_for(name, arguments)
+      {
+        jsonrpc: '2.0',
+        method: 'tools/call',
+        params: { name: name, arguments: arguments },
+        id: @request_id
+      }
     end
   end
 end
