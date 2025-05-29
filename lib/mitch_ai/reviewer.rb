@@ -1,384 +1,320 @@
 # frozen_string_literal: true
 
-require_relative 'ollama_client'
 require_relative 'mcp_client'
-require_relative 'mcp_server'
-require 'socket'
+require_relative 'ollama_client'
+require_relative 'language_detector'
+require_relative 'smart_model_manager'
 require 'json'
-require 'ostruct'
+require 'colorize'
 
 module MitchAI
   class Reviewer
-    DEFAULT_MODEL = 'deepseek-coder:6.7b'
-
-    def initialize(
-      model: DEFAULT_MODEL,
-      ollama_url: 'http://localhost:11434',
-      mcp_server_url: nil,
-      external_mcp: false
-    )
-      @model = model
-      @ollama = OllamaClient.new(ollama_url)
-      @external_mcp = external_mcp
-
-      if external_mcp
-        # User is managing their own MCP server
-        @mcp_server_url = mcp_server_url || 'http://localhost:4568'
-        @mcp = MCPClient.new(@mcp_server_url)
-      else
-        # We manage the MCP server internally
-        @mcp_server = start_internal_mcp_server
-        @mcp_server_url = "http://localhost:#{@mcp_server.port}"
-        @mcp = MCPClient.new(@mcp_server_url)
-      end
-
-      verify_connections!
+    def initialize(options = {})
+      @mcp_client = MCPClient.new
+      @ollama_client = OllamaClient.new
+      @model_manager = SmartModelManager.new
+      @selected_model = options[:model]
+      @verbose = options[:verbose] || false
     end
 
-    # Enhanced file review with MCP + Ollama
+    def review_project(project_path)
+      puts '🔍 Analyzing project structure...'.cyan
+
+      # Step 1: Analyze project with MCP
+      project_analysis = analyze_project_structure(project_path)
+
+      # Step 2: Select optimal model
+      @selected_model ||= select_and_prepare_model(project_analysis)
+
+      # Step 3: Find and group files
+      files_by_language = get_project_files(project_path, project_analysis[:languages_detected])
+
+      # Step 4: Review files by language
+      review_results = review_files_by_language(files_by_language)
+
+      # Step 5: Present comprehensive results
+      present_project_review(project_analysis, review_results)
+    end
+
     def review_file(file_path)
-      # Get file content via MCP
-      content = @mcp ? safe_mcp_call { @mcp.read_file(file_path) } : File.read(file_path)
-
-      # Get additional context via MCP
-      complexity = @mcp ? safe_mcp_call { @mcp.analyze_complexity(file_path) } : nil
-      code_smells = @mcp ? safe_mcp_call { @mcp.detect_code_smells(content) } : nil
-
-      # Prepare enhanced prompt for Ollama
-      prompt = build_review_prompt(content, file_path, complexity, code_smells)
-
-      # Get review from local Ollama
-      review = get_ollama_review(prompt)
-
-      {
-        file_path: file_path,
-        content_length: content.length,
-        complexity_metrics: complexity,
-        detected_smells: code_smells,
-        ai_review: review,
-        timestamp: Time.now.iso8601
-      }
-    end
-
-    # Review entire project
-    def review_project(project_path, _options = {})
-      raise 'MCP required for project review' unless @mcp
-
-      puts "🔍 Discovering Ruby files in #{project_path}..."
-      ruby_files = safe_mcp_call { @mcp.list_ruby_files(project_path) } || []
-
-      puts "📊 Found #{ruby_files.length} Ruby files to review"
-
-      results = {}
-      ruby_files.each_with_index do |file_path, index|
-        puts "📝 Reviewing #{file_path} (#{index + 1}/#{ruby_files.length})"
-
-        begin
-          results[file_path] = review_file(file_path)
-        rescue StandardError => e
-          puts "❌ Error reviewing #{file_path}: #{e.message}"
-          results[file_path] = { error: e.message }
-        end
+      unless File.exist?(file_path)
+        puts "❌ File not found: #{file_path}".red
+        return nil
       end
 
-      # Generate project summary
-      summary = generate_project_summary(results)
+      language = LanguageDetector.detect_language_from_extension(file_path)
 
-      {
-        project_path: project_path,
-        total_files: ruby_files.length,
-        summary: summary,
-        detailed_results: results
-      }
-    end
+      # Select model if not already set
+      @selected_model ||= @model_manager.recommend_model_for_languages([language])
+      @model_manager.ensure_model_ready(@selected_model)
 
-    # Review git changes
-    def review_git_changes(commit_range = 'HEAD~1..HEAD', project_path = '.')
-      raise 'MCP required for git review' unless @mcp
+      puts "📄 Reviewing #{File.basename(file_path)} (#{language})...".cyan
 
-      puts "🔄 Getting git diff for #{commit_range}..."
-      diff = safe_mcp_call { @mcp.git_diff(commit_range) }
-
-      return { error: 'Could not get git diff' } unless diff
-
-      # Extract changed files
-      changed_files = extract_ruby_files_from_diff(diff)
-
-      puts "📋 Found #{changed_files.length} changed Ruby files"
-
-      results = {}
-      changed_files.each do |file_path|
-        full_path = File.join(project_path, file_path)
-        puts "🔍 Reviewing changed file: #{file_path}"
-
-        begin
-          if File.exist?(full_path)
-            results[file_path] = review_file(full_path)
-            results[file_path][:change_context] = extract_file_changes(diff, file_path)
-          else
-            results[file_path] = { error: "File not found: #{full_path}" }
-          end
-        rescue StandardError => e
-          results[file_path] = { error: e.message }
-        end
-      end
-
-      {
-        commit_range: commit_range,
-        diff_summary: summarize_diff(diff),
-        changed_files: changed_files,
-        detailed_reviews: results
-      }
-    end
-
-    # Smart review that determines what to do based on input
-    def smart_review(target)
-      if File.file?(target)
-        review_file(target)
-      elsif File.directory?(target)
-        review_project(target)
-      elsif target.include?('..')
-        # Looks like a git range
-        review_git_changes(target)
-      else
-        raise "Unknown target type: #{target}"
-      end
+      content = File.read(file_path)
+      review_single_file(file_path, content, language)
     end
 
     private
 
-    def start_internal_mcp_server
-      # Find available port
-      port = find_available_port(4568)
+    def analyze_project_structure(project_path)
+      puts '🔧 Running project analysis...'.yellow if @verbose
 
-      # Start server in background thread
-      server_thread = Thread.new do
-        require_relative 'mcp_server'
-        MCPServer.set :port, port
-        MCPServer.set :logging, false # Reduce noise
-        MCPServer.run!
+      analysis_result = @mcp_client.call_tool('analyze_project_structure', { path: project_path })
+      analysis = JSON.parse(analysis_result, symbolize_names: true)
+
+      puts "📋 Detected: #{analysis[:languages_detected].join(', ')}".yellow if @verbose
+      puts "🎯 Project type: #{analysis[:project_type]}".yellow if @verbose
+
+      analysis
+    end
+
+    def select_and_prepare_model(project_analysis)
+      languages = project_analysis[:languages_detected]
+      recommended_model = project_analysis[:recommended_model]
+
+      puts "🧠 Selected model: #{recommended_model}".green
+
+      model_info = @model_manager.get_model_info(recommended_model)
+      puts "   Optimized for: #{model_info[:strengths].join(', ')}".green
+
+      @model_manager.ensure_model_ready(recommended_model)
+      recommended_model
+    end
+
+    def get_project_files(project_path, languages)
+      puts '📁 Finding source files...'.cyan
+
+      files_result = @mcp_client.call_tool('find_all_source_files', {
+                                             path: project_path,
+                                             languages: languages.map(&:to_s)
+                                           })
+
+      files_by_language = JSON.parse(files_result, symbolize_names: true)
+
+      # Log file counts
+      files_by_language.each do |language, files|
+        next if files.empty?
+
+        puts "   #{language}: #{files.length} files".white if @verbose
       end
 
-      # Wait for server to be ready
-      wait_for_server(port)
-
-      # Return a simple object that tracks the port
-      OpenStruct.new(port: port, thread: server_thread)
+      files_by_language
     end
 
-    def find_available_port(starting_port)
-      port = starting_port
-      port += 1 while port_in_use?(port)
-      port
-    end
+    def review_files_by_language(files_by_language)
+      results = {}
+      total_files = files_by_language.values.flatten.length
+      current_file = 0
 
-    def port_in_use?(port)
-      TCPSocket.new('localhost', port).close
-      true
-    rescue Errno::ECONNREFUSED
-      false
-    end
+      files_by_language.each do |language, files|
+        next if files.empty?
 
-    def wait_for_server(port, timeout: 10)
-      start_time = Time.now
+        language_sym = language.to_sym
+        puts "\n📋 Reviewing #{language} files (#{files.length} files)...".cyan
 
-      loop do
-        break if server_responding?(port)
-
-        raise "MCP server failed to start within #{timeout} seconds" if Time.now - start_time > timeout
-
-        sleep(0.1)
-      end
-    end
-
-    def server_responding?(port)
-      system("curl -s http://localhost:#{port}/status > /dev/null 2>&1")
-    end
-
-    def verify_connections!
-      # Check Ollama connection
-      begin
-        @ollama.available_models
-        puts '✅ Connected to Ollama'
-      rescue StandardError => e
-        puts "❌ Ollama connection failed: #{e.message}"
-        puts '💡 Make sure Ollama is running: ollama serve'
-        raise
-      end
-
-      # Check MCP connection
-      if @mcp
-        begin
-          @mcp.call_tool('read_file', { path: __FILE__ })
-          puts '✅ Connected to MCP server'
-        rescue StandardError => e
-          puts "❌ MCP connection failed: #{e.message}"
-          puts '💡 MCP server may not be ready yet'
-          # Don't raise - continue without MCP for basic functionality
-          @mcp = nil
-        end
-      end
-
-      # Check if model is available
-      available_models = @ollama.available_models.map { |m| m['name'] }
-      unless available_models.include?(@model)
-        puts "❌ Model #{@model} not found"
-        puts "📋 Available models: #{available_models.join(', ')}"
-        puts "💡 Pull model with: ollama pull #{@model}"
-        raise 'Model not available'
-      end
-
-      puts "✅ Using model: #{@model}"
-    end
-
-    def build_review_prompt(content, file_path, complexity, code_smells)
-      <<~PROMPT
-        You are an expert Ruby code reviewer. Please analyze this Ruby code and provide a comprehensive review.
-
-        FILE: #{file_path}
-
-        COMPLEXITY METRICS:
-        #{complexity ? JSON.pretty_generate(JSON.parse(complexity)) : 'Not available'}
-
-        DETECTED CODE SMELLS:
-        #{code_smells ? JSON.pretty_generate(JSON.parse(code_smells)) : 'Not available'}
-
-        CODE TO REVIEW:
-        ```ruby
-        #{content}
-        ```
-
-        Please provide a structured analysis with:
-        1. Overall code quality score (1-10)
-        2. Specific issues found (bugs, security, performance)
-        3. Code style and best practices feedback
-        4. Suggestions for improvement
-        5. Positive aspects of the code
-
-        Respond in JSON format with these keys:
-        {
-          "score": <number>,
-          "issues": [<array of strings>],
-          "suggestions": [<array of strings>],
-          "positive_aspects": [<array of strings>],
-          "summary": "<string>"
+        results[language_sym] = {
+          files: [],
+          summary: {
+            total_files: files.length,
+            total_issues: 0,
+            average_score: 0,
+            language: language
+          }
         }
-      PROMPT
-    end
 
-    def get_ollama_review(prompt)
-      messages = [
-        {
-          role: 'user',
-          content: prompt
-        }
-      ]
+        scores = []
+        total_issues = 0
 
-      response = @ollama.chat(@model, messages)
-      content = response.dig('message', 'content')
+        files.each do |file_path|
+          current_file += 1
+          progress = (current_file.to_f / total_files * 100).round(1)
 
-      # Try to parse as JSON, fallback to structured text
-      begin
-        JSON.parse(content)
-      rescue JSON::ParserError
-        # If not valid JSON, try to extract structured information
-        parse_text_response(content)
-      end
-    rescue StandardError => e
-      {
-        error: "Failed to get AI review: #{e.message}",
-        raw_response: content
-      }
-    end
+          print "\r   Progress: #{progress}% (#{File.basename(file_path)})".white
 
-    def parse_text_response(content)
-      # Simple text parsing fallback
-      lines = content.split("\n")
+          begin
+            content = File.read(file_path)
+            review_result = review_single_file(file_path, content, language_sym)
 
-      {
-        score: extract_score(content),
-        issues: extract_section(content, 'issues'),
-        suggestions: extract_section(content, 'suggestions'),
-        positive_aspects: extract_section(content, 'positive'),
-        summary: lines.last(3).join(' ').strip
-      }
-    end
+            if review_result
+              results[language_sym][:files] << {
+                path: file_path,
+                result: review_result
+              }
 
-    def extract_score(content)
-      # Look for patterns like "Score: 7/10" or "7 out of 10"
-      match = content.match(%r{(?:score|rating).*?(\d+)(?:/10|out of 10|\s*$)}i)
-      match ? match[1].to_i : nil
-    end
-
-    def extract_section(content, keyword)
-      lines = content.split("\n")
-      section_lines = []
-      in_section = false
-
-      lines.each do |line|
-        if line.downcase.include?(keyword)
-          in_section = true
-          next
-        elsif in_section && (line.empty? || line.match(/^\d+\.|^-|^\*/))
-          if line.strip.length > 3 # Ignore very short lines
-            section_lines << line.strip.gsub(/^\d+\.\s*|^-\s*|^\*\s*/, '')
+              scores << review_result[:score] if review_result[:score]
+              total_issues += review_result[:issues]&.length || 0
+            end
+          rescue StandardError => e
+            puts "\n⚠️  Error reviewing #{file_path}: #{e.message}".red if @verbose
           end
-        elsif in_section && line.match(/^[A-Z]/)
-          break # New section started
+        end
+
+        # Calculate summary statistics
+        if scores.any?
+          results[language_sym][:summary][:average_score] = (scores.sum.to_f / scores.length).round(1)
+          results[language_sym][:summary][:total_issues] = total_issues
+        end
+
+        print "\r   #{language}: #{files.length} files reviewed ✅".green
+        puts
+      end
+
+      results
+    end
+
+    def review_single_file(file_path, content, language)
+      return nil if content.strip.empty?
+
+      # Skip very large files (>10KB) to avoid token limits
+      if content.bytesize > 10_240
+        return {
+          score: 5,
+          issues: [{ description: "File too large for detailed review (#{content.bytesize} bytes)" }],
+          summary: 'File skipped due to size'
+        }
+      end
+
+      prompt = @model_manager.build_review_prompt(language, content, file_path)
+
+      begin
+        response = @ollama_client.chat(@selected_model, [
+                                         { role: 'user', content: prompt }
+                                       ])
+
+        # Parse JSON response
+        if response && response.include?('{')
+          json_start = response.index('{')
+          json_end = response.rindex('}') + 1
+          json_content = response[json_start...json_end]
+
+          JSON.parse(json_content, symbolize_names: true)
+        else
+          # Fallback for non-JSON responses
+          {
+            score: 6,
+            issues: [],
+            summary: response&.strip || 'Review completed',
+            raw_response: response
+          }
+        end
+      rescue JSON::ParserError => e
+        puts "\n⚠️  JSON parsing error for #{file_path}: #{e.message}".red if @verbose
+        {
+          score: 5,
+          issues: [{ description: 'Could not parse AI response' }],
+          summary: 'Review parsing failed',
+          raw_response: response
+        }
+      rescue StandardError => e
+        puts "\n❌ Error reviewing #{file_path}: #{e.message}".red if @verbose
+        nil
+      end
+    end
+
+    def present_project_review(project_analysis, review_results)
+      puts "\n" + ('=' * 60)
+      puts '🎉 MITCH-AI PROJECT REVIEW COMPLETE'.green.bold
+      puts '=' * 60
+
+      # Project overview
+      puts "\n📊 PROJECT OVERVIEW".blue.bold
+      puts "Languages: #{project_analysis[:languages_detected].join(', ')}"
+      puts "Project Type: #{project_analysis[:project_type]}"
+      puts "Model Used: #{@selected_model}"
+
+      # Language summaries
+      puts "\n📋 LANGUAGE BREAKDOWN".blue.bold
+      review_results.each do |language, data|
+        summary = data[:summary]
+        puts "\n#{language.to_s.upcase}:"
+        puts "   Files: #{summary[:total_files]}"
+        puts "   Average Score: #{summary[:average_score]}/10"
+        puts "   Total Issues: #{summary[:total_issues]}"
+
+        # Show worst files
+        worst_files = data[:files]
+                      .select { |f| f[:result][:score] }
+                      .sort_by { |f| f[:result][:score] }
+                      .first(3)
+
+        next unless worst_files.any?
+
+        puts '   Needs Attention:'
+        worst_files.each do |file_data|
+          score = file_data[:result][:score]
+          filename = File.basename(file_data[:path])
+          puts "     #{filename} (#{score}/10)".yellow
         end
       end
 
-      section_lines
-    end
+      # Overall recommendations
+      puts "\n🎯 TOP RECOMMENDATIONS".blue.bold
+      all_priority_actions = extract_priority_actions(review_results)
 
-    def safe_mcp_call
-      yield
-    rescue StandardError => e
-      puts "⚠️  MCP call failed: #{e.message}"
-      nil
-    end
-
-    def generate_project_summary(results)
-      successful_reviews = results.values.reject { |r| r[:error] }
-
-      return { error: 'No successful reviews' } if successful_reviews.empty?
-
-      # Calculate aggregate metrics
-      scores = successful_reviews.filter_map { |r| r.dig(:ai_review, 'score') }
-      avg_score = scores.any? ? scores.sum.to_f / scores.length : nil
-
-      # Count issues
-      total_issues = successful_reviews.sum do |r|
-        issues = r.dig(:ai_review, 'issues')
-        issues.is_a?(Array) ? issues.length : 0
+      if all_priority_actions.any?
+        all_priority_actions.first(5).each_with_index do |action, i|
+          puts "#{i + 1}. #{action}".yellow
+        end
+      else
+        puts 'Great job! No major issues found.'.green
       end
 
-      {
-        files_reviewed: successful_reviews.length,
-        average_score: avg_score&.round(2),
-        total_issues_found: total_issues,
-        files_with_errors: results.count { |_, r| r[:error] }
-      }
+      # Files needing immediate attention
+      critical_files = find_critical_files(review_results)
+      if critical_files.any?
+        puts "\n🚨 CRITICAL ISSUES".red.bold
+        critical_files.each do |file_info|
+          puts "#{file_info[:path]}:".red
+          file_info[:issues].each do |issue|
+            puts "   • #{issue[:description]}".white
+          end
+        end
+      end
+
+      puts "\n✨ Review complete! Focus on the critical issues first.".green
     end
 
-    def extract_ruby_files_from_diff(diff)
-      diff.scan(%r{\+\+\+ b/(.+\.rb)}).flatten
+    def extract_priority_actions(review_results)
+      actions = []
+
+      review_results.each do |_, data|
+        data[:files].each do |file_data|
+          result = file_data[:result]
+          actions.concat(result[:priority_actions]) if result[:priority_actions]&.any?
+        end
+      end
+
+      # Remove duplicates and return most common
+      action_counts = actions.group_by(&:itself).transform_values(&:count)
+      action_counts.sort_by { |_, count| -count }.map { |action, _| action }
     end
 
-    def extract_file_changes(diff, file_path)
-      # Extract the specific changes for this file from the diff
-      file_section = diff.split('diff --git').find { |section| section.include?(file_path) }
-      file_section || 'Changes not found in diff'
-    end
+    def find_critical_files(review_results)
+      critical = []
 
-    def summarize_diff(diff)
-      lines = diff.split("\n")
-      {
-        total_lines: lines.length,
-        additions: lines.count { |l| l.start_with?('+') && !l.start_with?('+++') },
-        deletions: lines.count { |l| l.start_with?('-') && !l.start_with?('---') },
-        files_changed: diff.scan(%r{\+\+\+ b/(.+)}).flatten.length
-      }
+      review_results.each do |_, data|
+        data[:files].each do |file_data|
+          result = file_data[:result]
+
+          # Files with score < 5 or critical issues
+          next unless (result[:score] && result[:score] < 5) ||
+                      result[:issues]&.any? { |issue| issue[:severity] == 'critical' }
+
+          critical_issues = result[:issues]&.select do |issue|
+            issue[:severity] == 'critical' || result[:score] < 5
+          end || []
+
+          next unless critical_issues.any?
+
+          critical << {
+            path: file_data[:path],
+            score: result[:score],
+            issues: critical_issues
+          }
+        end
+      end
+
+      critical.sort_by { |f| f[:score] || 0 }
     end
   end
 end
