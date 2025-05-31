@@ -50,8 +50,58 @@ module MitchAI
 
       puts "📄 Reviewing #{File.basename(file_path)} (#{language})...".cyan
 
-      content = File.read(file_path)
-      review_single_file(file_path, content, language)
+      # READ THE FILE DIRECTLY - don't use MCP for single files
+      content = File.read(file_path, encoding: 'utf-8')
+
+      result = review_single_file(file_path, content, language)
+
+      if result
+        present_single_file_review(file_path, result)
+      else
+        puts '❌ Failed to review file'.red
+      end
+
+      result
+    end
+
+    # Add this method to present single file results:
+    private
+
+    def present_single_file_review(file_path, result)
+      puts "\n" + ('=' * 60)
+      puts '🎉 MITCH-AI FILE REVIEW COMPLETE'.green.bold
+      puts '=' * 60
+      puts "File: #{file_path}"
+      puts "Score: #{result[:score]}/10" if result[:score]
+
+      if result[:issues]&.any?
+        puts "\n🚨 ISSUES FOUND:".red.bold
+        result[:issues].each_with_index do |issue, i|
+          severity_color = case issue[:severity]
+                           when 'critical' then :red
+                           when 'major' then :yellow
+                           else :white
+                           end
+          puts "#{i + 1}. #{issue[:description]}".send(severity_color)
+          puts "   Fix: #{issue[:suggestion]}" if issue[:suggestion]
+        end
+      end
+
+      if result[:suggestions]&.any?
+        puts "\n💡 SUGGESTIONS:".blue.bold
+        result[:suggestions].each_with_index do |suggestion, i|
+          puts "#{i + 1}. #{suggestion[:description]}"
+        end
+      end
+
+      if result[:priority_actions]&.any?
+        puts "\n🎯 PRIORITY ACTIONS:".yellow.bold
+        result[:priority_actions].each_with_index do |action, i|
+          puts "#{i + 1}. #{action}"
+        end
+      end
+
+      puts "\n✨ Review complete!".green
     end
 
     private
@@ -132,7 +182,8 @@ module MitchAI
           print "\r   Progress: #{progress}% (#{File.basename(file_path)})".white
 
           begin
-            content = File.read(file_path)
+            content = File.read(file_path, encoding: 'utf-8')
+            puts "📄 Reviewing #{File.basename(file_path)}..." if @verbose
             review_result = review_single_file(file_path, content, language_sym)
 
             if review_result
@@ -181,11 +232,20 @@ module MitchAI
                                          { role: 'user', content: prompt }
                                        ])
 
+        # Handle different response types
+        response_text = if response.is_a?(Hash)
+                          # If ollama_client returns a hash, extract the message content
+                          response.dig('message', 'content') || response.dig(:message, :content) || response.to_s
+                        else
+                          # If it's a string, use it directly
+                          response.to_s
+                        end
+
         # Parse JSON response
-        if response && response.include?('{')
-          json_start = response.index('{')
-          json_end = response.rindex('}') + 1
-          json_content = response[json_start...json_end]
+        if response_text && response_text.include?('{')
+          json_start = response_text.index('{')
+          json_end = response_text.rindex('}') + 1
+          json_content = response_text[json_start...json_end]
 
           JSON.parse(json_content, symbolize_names: true)
         else
@@ -193,7 +253,7 @@ module MitchAI
           {
             score: 6,
             issues: [],
-            summary: response&.strip || 'Review completed',
+            summary: response_text&.strip || 'Review completed',
             raw_response: response
           }
         end

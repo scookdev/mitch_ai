@@ -281,29 +281,31 @@ module MitchAI
 
     def select_optimal_model(languages, project_type: nil)
       # Get available models
-      available_models = @ollama_manager.list_models
+      # available_models = @ollama_manager.list_models
 
-      # Score each model based on language compatibility
-      model_scores = {}
-      MODEL_CAPABILITIES.each do |model, capabilities|
-        score = calculate_model_score(model, capabilities, languages)
-        model_scores[model] = score if score > 0
-      end
+      # # Score each model based on language compatibility
+      # model_scores = {}
+      # MODEL_CAPABILITIES.each do |model, capabilities|
+      #   score = calculate_model_score(model, capabilities, languages)
+      #   model_scores[model] = score if score > 0
+      # end
 
-      # Return highest scoring model, fallback to default
-      best_model = model_scores.max_by { |_, score| score }&.first
-      best_model || 'deepseek-coder:6.7b'
+      # # Return highest scoring model, fallback to default
+      # best_model = model_scores.max_by { |_, score| score }&.first
+      # best_model || 'deepseek-coder:6.7b'
+
+      recommend_model_for_languages(languages)
     end
 
     def ensure_model_ready(model_name)
-      if @ollama_manager.model_exists?(model_name)
+      if @ollama_manager.model_available?(model_name)
         puts "✅ #{model_name} already available"
-      else
+      else # 👈 Use model_available? instead
         puts "📥 Downloading #{model_name}..."
         model_info = MODEL_CAPABILITIES[model_name]
         puts "   Size: #{model_info[:size]}, Strengths: #{model_info[:strengths].join(', ')}" if model_info
 
-        @ollama_manager.pull_model(model_name)
+        @ollama_manager.pull_model!(model_name) # 👈 Use pull_model! instead
         puts "✅ #{model_name} ready!"
       end
     end

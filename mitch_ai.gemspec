@@ -51,10 +51,11 @@ Gem::Specification.new do |spec|
   # RUNTIME DEPENDENCIES
   # ================================
 
-  spec.add_dependency 'tty-spinner', '~> 0.9.3'    # Great for progress indicators
-  spec.add_dependency 'sinatra', '~> 3.0'          # MCP server
-  spec.add_dependency 'puma', '~> 6.0'             # Web server for MCP
+  spec.add_dependency 'colorize'
   spec.add_dependency 'json', '~> 2.0'             # JSON processing
+  spec.add_dependency 'puma', '~> 6.0'             # Web server for MCP
+  spec.add_dependency 'sinatra', '~> 3.0'          # MCP server
+  spec.add_dependency 'tty-spinner', '~> 0.9.3'    # Great for progress indicators
 
   # ================================
   # DEVELOPMENT DEPENDENCIES
@@ -62,19 +63,18 @@ Gem::Specification.new do |spec|
 
   # Keep all your existing dev dependencies
   spec.add_development_dependency 'bundler', '~> 2.0'
+  spec.add_development_dependency 'codecov', '~> 0.6.0'
+  spec.add_development_dependency 'pry-byebug', '~> 3.10'
   spec.add_development_dependency 'rake', '~> 13.0'
+  spec.add_development_dependency 'redcarpet', '~> 3.6' # YARD markdown support
   spec.add_development_dependency 'rspec', '~> 3.12'
+  spec.add_development_dependency 'rspec-json_expectations', '~> 2.2' # For JSON testing
   spec.add_development_dependency 'rubocop', '~> 1.50'
   spec.add_development_dependency 'simplecov', '~> 0.21.2'
-  spec.add_development_dependency 'codecov', '~> 0.6.0'
   spec.add_development_dependency 'steep', '~> 1.5'
-  spec.add_development_dependency 'pry-byebug', '~> 3.10'
-  spec.add_development_dependency 'webmock', '~> 3.18' # For testing HTTP calls
   spec.add_development_dependency 'vcr', '~> 6.1' # For recording HTTP interactions
-  spec.add_development_dependency 'rspec-json_expectations', '~> 2.2' # For JSON testing
-  spec.add_development_dependency 'yard', '~> 0.9'           # Documentation
-  spec.add_development_dependency 'redcarpet', '~> 3.6'      # YARD markdown support
-
+  spec.add_development_dependency 'webmock', '~> 3.18' # For testing HTTP calls
+  spec.add_development_dependency 'yard', '~> 0.9' # Documentation
   spec.post_install_message = <<~MSG
     🎉 Mitch-AI 1.0.0 has been installed!
 

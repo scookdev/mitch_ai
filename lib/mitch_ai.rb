@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative 'mitch_ai/cli'
 require_relative 'mitch_ai/version'
 require_relative 'mitch_ai/ollama_client'
 require_relative 'mitch_ai/mcp_client'
