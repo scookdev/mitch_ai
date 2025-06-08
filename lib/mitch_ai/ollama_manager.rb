@@ -18,22 +18,31 @@ module MitchAI
 
     # Complete Ollama setup - installs, starts, and pulls model
     def setup!(model: DEFAULT_MODEL, force: false)
-      spinner = TTY::Spinner.new('[:spinner] 🚀 Setting up Ollama for Mitch-Ai', format: :dots)
-      spinner.auto_spin
+      steps = [
+        {
+          type: :magic,
+          message: 'Installing Ollama if needed',
+          action: -> { install_ollama! unless ollama_installed? && !force }
+        },
+        {
+          type: :server,
+          message: 'Starting Ollama service',
+          action: -> { start_ollama! unless ollama_running? }
+        },
+        {
+          type: :download,
+          message: "Pulling model #{model}",
+          action: -> { pull_model!(model) unless model_available?(model) && !force }
+        },
+        {
+          type: :epic,
+          message: 'Verifying setup',
+          action: -> { verify_setup!(model) }
+        }
+      ]
 
-      # Step 1: Install Ollama if needed
-      install_ollama! unless ollama_installed? && !force
-
-      # Step 2: Start Ollama service
-      start_ollama! unless ollama_running?
-
-      # Step 3: Pull the model
-      pull_model!(model) unless model_available?(model) && !force
-
-      # Step 4: Verify everything works
-      verify_setup!(model)
-
-      spinner.success("✅ Ollama setup complete! Model '#{model}' is ready.")
+      EnhancedSpinner.multi_step(steps)
+      puts "🎉 Ollama setup complete! Model '#{model}' is ready.".green
     end
 
     # Install Ollama automatically

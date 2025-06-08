@@ -18,19 +18,26 @@ module MitchAI
     end
 
     def review_project(project_path)
-      puts '🔍 Analyzing project structure...'.cyan
-
       # Step 1: Analyze project with MCP
-      project_analysis = analyze_project_structure(project_path)
+      project_analysis = EnhancedSpinner.analysis('Analyzing project structure and languages') do
+        analyze_project_structure(project_path)
+      end
 
       # Step 2: Select optimal model
-      @selected_model ||= select_and_prepare_model(project_analysis)
+      @selected_model ||= EnhancedSpinner.model('Selecting optimal AI model') do
+        select_and_prepare_model(project_analysis)
+      end
 
       # Step 3: Find and group files
-      files_by_language = get_project_files(project_path, project_analysis[:languages_detected])
+      files_by_language = EnhancedSpinner.files('Discovering source files by language') do
+        get_project_files(project_path, project_analysis[:languages_detected])
+      end
 
       # Step 4: Review files by language
-      review_results = review_files_by_language(files_by_language)
+      total_files = files_by_language.values.flatten.length
+      review_results = EnhancedSpinner.analysis("Reviewing #{total_files} files with AI") do
+        review_files_by_language(files_by_language)
+      end
 
       # Step 5: Present comprehensive results
       present_project_review(project_analysis, review_results)

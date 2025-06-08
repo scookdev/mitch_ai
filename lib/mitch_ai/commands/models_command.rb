@@ -30,8 +30,14 @@ module MitchAI
       private
 
       def list_models
-        model_manager = SmartModelManager.new
-        available_models = model_manager.instance_variable_get(:@ollama_manager).available_models
+        models_data = EnhancedSpinner.thinking('Analyzing model ecosystem') do
+          model_manager = SmartModelManager.new
+          available_models = model_manager.instance_variable_get(:@ollama_manager).available_models
+          { model_manager: model_manager, available_models: available_models }
+        end
+        
+        model_manager = models_data[:model_manager]
+        available_models = models_data[:available_models]
         
         puts '🤖 Model Status:'.cyan
         puts

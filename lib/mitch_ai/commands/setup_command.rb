@@ -8,16 +8,14 @@ module MitchAI
   module Commands
     class SetupCommand < BaseCommand
       def call(_args)
-        puts '🚀 Setting up Mitch-AI...'.cyan
-
-        begin
+        EnhancedSpinner.setup('Setting up Mitch-AI environment') do
           check_ollama_installation
           detect_and_setup_project
           show_setup_completion_message
-        rescue StandardError => e
-          puts "💥 Setup failed: #{e.message}".red
-          exit 1
         end
+      rescue StandardError => e
+        puts "💥 Setup failed: #{e.message}".red
+        exit 1
       end
 
       private

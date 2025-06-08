@@ -35,27 +35,32 @@ module MitchAI
           return
         end
 
-        puts "🚀 Starting MCP server on port #{port}...".cyan
-        
-        # Start server in background
-        pid = Process.fork do
-          begin
-            MCPServer.start!(port)
-          rescue StandardError => e
-            puts "❌ Failed to start server: #{e.message}".red
-            exit 1
+        success = EnhancedSpinner.server("Starting MCP server on port #{port}") do
+          # Start server in background
+          pid = Process.fork do
+            begin
+              MCPServer.start!(port)
+            rescue StandardError => e
+              puts "❌ Failed to start server: #{e.message}".red
+              exit 1
+            end
+          end
+
+          Process.detach(pid)
+          
+          # Wait a moment and check if it started
+          sleep(2)
+          
+          if server_running?(port)
+            save_server_pid(pid, port)
+            true
+          else
+            false
           end
         end
-
-        Process.detach(pid)
         
-        # Wait a moment and check if it started
-        sleep(2)
-        
-        if server_running?(port)
-          puts "✅ MCP server started successfully on port #{port}".green
+        if success
           puts "🔧 Available tools: #{get_server_tools(port).join(', ')}".white
-          save_server_pid(pid, port)
         else
           puts "❌ Failed to start MCP server".red
         end

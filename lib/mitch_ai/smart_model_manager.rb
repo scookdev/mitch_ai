@@ -394,13 +394,13 @@ module MitchAI
         end
       end
 
-      # Proceed with download
-      puts "📥 Downloading #{model_name}...".cyan
-      puts "   This may take #{MODEL_TIERS[model_info[:tier]][:setup_time]}..."
+      # Proceed with download with enhanced spinner
+      download_message = "Downloading #{model_name} (#{model_info[:size]}) - #{MODEL_TIERS[model_info[:tier]][:setup_time]}"
       
       begin
-        @ollama_manager.pull_model!(model_name)
-        puts "✅ #{model_name} ready!".green
+        EnhancedSpinner.download(download_message) do
+          @ollama_manager.pull_model!(model_name)
+        end
         true
       rescue StandardError => e
         puts "❌ Download failed: #{e.message}".red

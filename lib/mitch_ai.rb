@@ -6,6 +6,7 @@ require_relative 'mitch_ai/ollama_client'
 require_relative 'mitch_ai/mcp_client'
 require_relative 'mitch_ai/mcp_server'
 require_relative 'mitch_ai/reviewer'
+require_relative 'mitch_ai/enhanced_spinner'
 
 module MitchAI
   class Error < StandardError; end
