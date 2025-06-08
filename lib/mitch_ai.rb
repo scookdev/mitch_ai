@@ -4,6 +4,7 @@ require_relative 'mitch_ai/cli'
 require_relative 'mitch_ai/version'
 require_relative 'mitch_ai/ollama_client'
 require_relative 'mitch_ai/mcp_client'
+require_relative 'mitch_ai/mcp_server'
 require_relative 'mitch_ai/reviewer'
 
 module MitchAI

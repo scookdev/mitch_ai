@@ -25,6 +25,7 @@ module MitchAI
       @logger = Logger.new($stdout)
       @tools = {}
       register_code_review_tools
+      register_multi_language_tools
     end
 
     # MCP Protocol endpoint
@@ -327,27 +328,9 @@ module MitchAI
 
     def recommend_model_for_project(detector)
       languages = detector.detect_languages
-      project_type = detector.project_type
-
-      case project_type
-      when :rust_systems
-        'qwen2.5-coder:7b'      # Best for Rust
-      when :go_microservice
-        'deepseek-coder:6.7b'   # Good for Go + Docker
-      when :java_enterprise
-        'codellama:7b'          # Strong Java support
-      when :python_backend
-        'deepseek-coder:6.7b'   # Excellent Python
-      when :rails_fullstack, :frontend_typescript, :frontend_javascript
-        'deepseek-coder:6.7b'   # Best for web stack
-      else
-        # Mixed projects - use most versatile
-        if languages.include?(:rust)
-          'qwen2.5-coder:7b'
-        else
-          'deepseek-coder:6.7b' # Default workhorse
-        end
-      end
+      # Use SmartModelManager for consistent recommendations (defaults to fast tier)
+      model_manager = MitchAI::SmartModelManager.new
+      model_manager.recommend_model_for_languages(languages, tier: :fast)
     end
 
     def find_files_for_language(project_path, language)

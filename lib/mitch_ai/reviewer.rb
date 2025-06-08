@@ -44,9 +44,14 @@ module MitchAI
 
       language = LanguageDetector.detect_language_from_extension(file_path)
 
-      # Select model if not already set
-      @selected_model ||= @model_manager.recommend_model_for_languages([language])
-      @model_manager.ensure_model_ready(@selected_model)
+      # Select model if not already set (use fast tier by default)
+      @selected_model ||= @model_manager.recommend_model_for_languages([language], tier: :fast)
+      success = @model_manager.ensure_model_ready(@selected_model, languages: [language], interactive: false)
+      
+      unless success
+        puts "❌ Could not prepare model #{@selected_model}".red
+        return nil
+      end
 
       puts "📄 Reviewing #{File.basename(file_path)} (#{language})...".cyan
 
@@ -109,8 +114,15 @@ module MitchAI
     def analyze_project_structure(project_path)
       puts '🔧 Running project analysis...'.yellow if @verbose
 
-      analysis_result = @mcp_client.call_tool('analyze_project_structure', { path: project_path })
-      analysis = JSON.parse(analysis_result, symbolize_names: true)
+      begin
+        # Try MCP server first
+        analysis_result = @mcp_client.call_tool('analyze_project_structure', { path: project_path })
+        analysis = JSON.parse(analysis_result, symbolize_names: true)
+      rescue StandardError
+        puts '⚠️  MCP server not available, using direct analysis...'.yellow if @verbose
+        # Fallback to direct analysis
+        analysis = analyze_project_structure_direct(project_path)
+      end
 
       puts "📋 Detected: #{analysis[:languages_detected].join(', ')}".yellow if @verbose
       puts "🎯 Project type: #{analysis[:project_type]}".yellow if @verbose
@@ -134,12 +146,18 @@ module MitchAI
     def get_project_files(project_path, languages)
       puts '📁 Finding source files...'.cyan
 
-      files_result = @mcp_client.call_tool('find_all_source_files', {
-                                             path: project_path,
-                                             languages: languages.map(&:to_s)
-                                           })
-
-      files_by_language = JSON.parse(files_result, symbolize_names: true)
+      begin
+        # Try MCP server first
+        files_result = @mcp_client.call_tool('find_all_source_files', {
+                                               path: project_path,
+                                               languages: languages.map(&:to_s)
+                                             })
+        files_by_language = JSON.parse(files_result, symbolize_names: true)
+      rescue StandardError
+        puts '⚠️  Using direct file search...'.yellow if @verbose
+        # Fallback to direct file search
+        files_by_language = find_files_direct(project_path, languages)
+      end
 
       # Log file counts
       files_by_language.each do |language, files|
@@ -331,6 +349,9 @@ module MitchAI
         end
       end
 
+      # Show upgrade suggestions
+      show_upgrade_suggestions(project_analysis[:languages_detected])
+
       puts "\n✨ Review complete! Focus on the critical issues first.".green
     end
 
@@ -375,6 +396,74 @@ module MitchAI
       end
 
       critical.sort_by { |f| f[:score] || 0 }
+    end
+
+    # Fallback methods when MCP server is not available
+    def analyze_project_structure_direct(project_path)
+      detector = LanguageDetector.new(project_path)
+      languages = detector.detect_languages
+
+      {
+        languages_detected: languages,
+        primary_language: detector.primary_language,
+        project_type: detector.project_type,
+        recommended_model: @model_manager.recommend_model_for_languages(languages, tier: :fast)
+      }
+    end
+
+    def find_files_direct(project_path, languages)
+      require 'find'
+
+      results = {}
+      languages.each do |language|
+        results[language.to_s] = []
+      end
+
+      # Get file patterns for each language from LanguageDetector
+      language_patterns = {}
+      languages.each do |lang|
+        patterns = LanguageDetector::LANGUAGE_PATTERNS[lang]
+        language_patterns[lang] = patterns[:extensions] if patterns
+      end
+
+      Find.find(project_path) do |file_path|
+        next unless File.file?(file_path)
+        next if should_ignore_file?(file_path)
+
+        # Check which language this file belongs to
+        languages.each do |language|
+          extensions = language_patterns[language]
+          next unless extensions
+
+          if extensions.any? { |ext| file_path.downcase.end_with?(ext.downcase) }
+            results[language.to_s] << file_path
+            break # File belongs to this language, don't check others
+          end
+        end
+      end
+
+      results
+    end
+
+    def should_ignore_file?(path)
+      ignore_patterns = [
+        'node_modules/', '.git/', 'vendor/', 'target/', 'build/', 'dist/',
+        '__pycache__/', '.pytest_cache/', 'coverage/', 'tmp/', 'log/',
+        'spec/vcr_cassettes/', '.bundle/', 'pkg/'
+      ]
+
+      ignore_patterns.any? { |pattern| path.include?(pattern) }
+    end
+
+    def show_upgrade_suggestions(languages)
+      upgrades = @model_manager.get_upgrade_suggestions(@selected_model, languages)
+      return if upgrades.empty?
+
+      best_upgrade = upgrades.first
+      puts "\n💡 Upgrade Available:".yellow
+      puts "   #{best_upgrade[:model]} (+#{best_upgrade[:quality_improvement]} quality points)".white
+      puts "   #{best_upgrade[:info][:description]} (#{best_upgrade[:info][:size]})"
+      puts "   Run: #{'mitch-ai models upgrade'.cyan}"
     end
   end
 end

@@ -252,26 +252,78 @@ module MitchAI
       PROMPT
     }.freeze
 
+    MODEL_TIERS = {
+      fast: {
+        priority: 1,
+        description: 'Fast downloads, good quality',
+        setup_time: '~2 minutes'
+      },
+      balanced: {
+        priority: 2,
+        description: 'Better quality, moderate setup',
+        setup_time: '~5-10 minutes'
+      },
+      premium: {
+        priority: 3,
+        description: 'Best quality, longer setup',
+        setup_time: '~10-15 minutes'
+      }
+    }.freeze
+
     MODEL_CAPABILITIES = {
+      # Fast Tier - Quick downloads for immediate functionality
+      'codegemma:2b' => {
+        strengths: %i[ruby python typescript javascript css html go java],
+        description: 'Fast, lightweight model for quick reviews',
+        size: '1.6GB',
+        tier: :fast,
+        quality_score: 7
+      },
+      'phi3:mini' => {
+        strengths: %i[python javascript typescript],
+        description: 'Microsoft\'s efficient coding model',
+        size: '2.2GB',
+        tier: :fast,
+        quality_score: 7
+      },
+      
+      # Balanced Tier - Current models
       'deepseek-coder:6.7b' => {
         strengths: %i[ruby python typescript javascript css html],
         description: 'Excellent general-purpose coding model, best for web development',
-        size: '3.8GB'
+        size: '3.8GB',
+        tier: :balanced,
+        quality_score: 9
       },
       'qwen2.5-coder:7b' => {
         strengths: %i[rust go cpp java],
         description: 'Optimized for systems programming and compiled languages',
-        size: '4.1GB'
+        size: '4.1GB',
+        tier: :balanced,
+        quality_score: 9
       },
       'codellama:7b' => {
         strengths: %i[python java cpp ruby],
         description: 'Strong for enterprise languages and complex logic',
-        size: '3.9GB'
+        size: '3.9GB',
+        tier: :balanced,
+        quality_score: 8
       },
+      
+      # Premium Tier - High quality, large downloads
       'codellama:13b' => {
         strengths: %i[python java cpp rust go],
-        description: 'Most capable but requires more resources',
-        size: '7.3GB'
+        description: 'Most capable model with superior code understanding',
+        size: '7.3GB',
+        tier: :premium,
+        quality_score: 10
+      },
+      'deepseek-coder:33b' => {
+        strengths: %i[ruby python typescript javascript go rust java cpp],
+        description: 'Enterprise-grade model for complex codebases',
+        size: '19GB',
+        tier: :premium,
+        quality_score: 10
       }
     }.freeze
 
@@ -297,16 +349,62 @@ module MitchAI
       recommend_model_for_languages(languages)
     end
 
-    def ensure_model_ready(model_name)
+    def ensure_model_ready(model_name, languages: [], interactive: true)
       if @ollama_manager.model_available?(model_name)
         puts "✅ #{model_name} already available"
-      else # 👈 Use model_available? instead
-        puts "📥 Downloading #{model_name}..."
-        model_info = MODEL_CAPABILITIES[model_name]
-        puts "   Size: #{model_info[:size]}, Strengths: #{model_info[:strengths].join(', ')}" if model_info
+        return true
+      end
 
-        @ollama_manager.pull_model!(model_name) # 👈 Use pull_model! instead
-        puts "✅ #{model_name} ready!"
+      model_info = MODEL_CAPABILITIES[model_name]
+      unless model_info
+        puts "❌ Unknown model: #{model_name}".red
+        return false
+      end
+
+      if interactive
+        # Show download information and get consent
+        puts "\n📦 Model Required: #{model_name}".cyan
+        puts "   Size: #{model_info[:size]}"
+        puts "   Tier: #{model_info[:tier].to_s.capitalize} (#{MODEL_TIERS[model_info[:tier]][:description]})"
+        puts "   Download time: #{MODEL_TIERS[model_info[:tier]][:setup_time]}"
+        
+        # Suggest alternatives for large downloads
+        if model_info[:tier] != :fast && languages.any?
+          fast_alternative = recommend_model_for_languages(languages, tier: :fast)
+          fast_info = MODEL_CAPABILITIES[fast_alternative]
+          
+          puts "\n💡 Quick alternative available:".yellow
+          puts "   #{fast_alternative} (#{fast_info[:size]}) - #{fast_info[:description]}"
+          puts
+          
+          print "Choose: [1] Download #{model_name} [2] Use #{fast_alternative} [3] Cancel: "
+          choice = gets&.chomp || '3'
+          
+          case choice
+          when '2'
+            return ensure_model_ready(fast_alternative, languages: languages, interactive: false)
+          when '3'
+            puts "❌ Setup cancelled"
+            return false
+          end
+        else
+          print "Download #{model_name} (#{model_info[:size]})? [Y/n]: "
+          choice = (gets&.chomp || 'y').downcase
+          return false if choice == 'n' || choice == 'no'
+        end
+      end
+
+      # Proceed with download
+      puts "📥 Downloading #{model_name}...".cyan
+      puts "   This may take #{MODEL_TIERS[model_info[:tier]][:setup_time]}..."
+      
+      begin
+        @ollama_manager.pull_model!(model_name)
+        puts "✅ #{model_name} ready!".green
+        true
+      rescue StandardError => e
+        puts "❌ Download failed: #{e.message}".red
+        false
       end
     end
 
@@ -355,54 +453,89 @@ module MitchAI
       FULL_PROMPT
     end
 
-    def recommend_model_for_languages(languages)
-      primary_language = languages.first
-
-      case languages.sort
-      # Rust-heavy projects
-      when ->(langs) { langs.include?(:rust) }
-        'qwen2.5-coder:7b'
-
-      # Go microservices
-      when ->(langs) { langs.include?(:go) && langs.length <= 3 }
-        'deepseek-coder:6.7b'
-
-      # Java enterprise
-      when ->(langs) { langs.include?(:java) }
-        if languages.length > 3
-          'codellama:13b'  # Complex enterprise projects
-        else
-          'codellama:7b'   # Simpler Java projects
-        end
-
-      # Web development (most common)
-      when ->(langs) { (langs & %i[typescript javascript css html]).any? }
-        'deepseek-coder:6.7b'
-
-      # Python-heavy
-      when ->(langs) { langs.include?(:python) }
-        if languages.include?(:rust) || languages.include?(:go)
-          'codellama:13b' # Complex mixed projects
-        else
-          'deepseek-coder:6.7b'
-        end
-
-      # Ruby/Rails
-      when ->(langs) { langs.include?(:ruby) }
-        'deepseek-coder:6.7b'
-
-      else
-        'deepseek-coder:6.7b' # Safe default
+    def recommend_model_for_languages(languages, tier: :fast)
+      # Get models for the specified tier
+      tier_models = MODEL_CAPABILITIES.select { |_, info| info[:tier] == tier }
+      
+      # Find best match for languages within tier
+      best_model = tier_models.max_by do |model, info|
+        calculate_language_compatibility(info[:strengths], languages) * info[:quality_score]
       end
+      
+      if best_model
+        best_model.first
+      else
+        # Fallback to best model in fast tier
+        fallback_tier_models = MODEL_CAPABILITIES.select { |_, info| info[:tier] == :fast }
+        fallback_model = fallback_tier_models.max_by do |model, info|
+          calculate_language_compatibility(info[:strengths], languages) * info[:quality_score]
+        end
+        fallback_model&.first || 'codegemma:2b'
+      end
+    end
+
+    def get_upgrade_suggestions(current_model, languages)
+      current_info = MODEL_CAPABILITIES[current_model]
+      return [] unless current_info
+
+      current_tier = current_info[:tier]
+      
+      # Find better models in higher tiers
+      upgrades = []
+      
+      MODEL_CAPABILITIES.each do |model, info|
+        next if info[:tier] == current_tier || MODEL_TIERS[info[:tier]][:priority] <= MODEL_TIERS[current_tier][:priority]
+        
+        compatibility = calculate_language_compatibility(info[:strengths], languages)
+        next if compatibility < 0.7 # Only suggest highly compatible models
+        
+        quality_improvement = info[:quality_score] - current_info[:quality_score]
+        next if quality_improvement <= 0
+        
+        upgrades << {
+          model: model,
+          info: info,
+          tier: info[:tier],
+          compatibility: compatibility,
+          quality_improvement: quality_improvement
+        }
+      end
+      
+      # Sort by quality improvement, then by compatibility
+      upgrades.sort_by { |u| [-u[:quality_improvement], -u[:compatibility]] }
+    end
+
+    def get_models_by_tier(tier)
+      MODEL_CAPABILITIES.select { |_, info| info[:tier] == tier }
     end
 
     def get_model_info(model_name)
       MODEL_CAPABILITIES[model_name] || {
         strengths: [],
         description: 'Unknown model',
-        size: 'Unknown'
+        size: 'Unknown',
+        tier: :fast,
+        quality_score: 5
       }
     end
+
+    private
+
+    def calculate_language_compatibility(model_strengths, project_languages)
+      return 0.0 if project_languages.empty? || model_strengths.empty?
+
+      # Calculate how many of the project's languages are covered by the model
+      covered_languages = project_languages & model_strengths
+      compatibility = covered_languages.length.to_f / project_languages.length
+
+      # Bonus for models that cover primary languages well
+      if project_languages.first && model_strengths.include?(project_languages.first)
+        compatibility += 0.2
+      end
+
+      [compatibility, 1.0].min
+    end
+
 
     def list_recommended_models(languages)
       recommendations = []
