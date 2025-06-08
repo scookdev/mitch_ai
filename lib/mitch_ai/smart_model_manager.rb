@@ -399,7 +399,7 @@ module MitchAI
       
       begin
         EnhancedSpinner.download(download_message) do
-          @ollama_manager.pull_model!(model_name)
+          @ollama_manager.pull_model!(model_name, show_progress: false)
         end
         true
       rescue StandardError => e

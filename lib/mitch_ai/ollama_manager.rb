@@ -32,7 +32,7 @@ module MitchAI
         {
           type: :download,
           message: "Pulling model #{model}",
-          action: -> { pull_model!(model) unless model_available?(model) && !force }
+          action: -> { pull_model!(model, show_progress: false) unless model_available?(model) && !force }
         },
         {
           type: :epic,
@@ -91,19 +91,21 @@ module MitchAI
     end
 
     # Pull a specific model
-    def pull_model!(model)
+    def pull_model!(model, show_progress: true)
       if model_available?(model)
-        @logger.info "✅ Model '#{model}' already available"
+        @logger.info "✅ Model '#{model}' already available" if show_progress
         return
       end
 
-      @logger.info "📥 Pulling model '#{model}' (this may take a while)..."
-      @logger.info '    ☕ Grab some coffee - large models can take 5-15 minutes'
+      if show_progress
+        @logger.info "📥 Pulling model '#{model}' (this may take a while)..."
+        @logger.info '    ☕ Grab some coffee - large models can take 5-15 minutes'
+      end
 
       success = false
       output = ''
 
-      # Show progress while pulling
+      # Show progress while pulling (only if show_progress is true)
       Open3.popen3("ollama pull #{model}") do |stdin, stdout, stderr, thread|
         stdin.close
 
@@ -112,8 +114,8 @@ module MitchAI
           Thread.new do
             stream.each_line do |line|
               output += line
-              # Show progress for large downloads
-              if line.include?('%') || line.include?('pulling')
+              # Show progress for large downloads only if requested
+              if show_progress && (line.include?('%') || line.include?('pulling'))
                 print "\r    #{line.strip}"
                 $stdout.flush
               end
@@ -124,10 +126,10 @@ module MitchAI
         success = thread.value.success?
       end
 
-      print "\n" # New line after progress
+      print "\n" if show_progress # New line after progress
 
       if success
-        @logger.info "✅ Model '#{model}' downloaded successfully"
+        @logger.info "✅ Model '#{model}' downloaded successfully" if show_progress
       else
         @logger.error "❌ Failed to download model '#{model}'"
         @logger.error "Output: #{output}"

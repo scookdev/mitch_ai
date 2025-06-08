@@ -19,25 +19,24 @@ module MitchAI
 
     def review_project(project_path)
       # Step 1: Analyze project with MCP
-      project_analysis = EnhancedSpinner.analysis('Analyzing project structure and languages') do
+      project_analysis = EnhancedSpinner.processing('Analyzing project structure') do
         analyze_project_structure(project_path)
       end
 
       # Step 2: Select optimal model
-      @selected_model ||= EnhancedSpinner.model('Selecting optimal AI model') do
+      @selected_model ||= EnhancedSpinner.processing('Selecting AI model') do
         select_and_prepare_model(project_analysis)
       end
 
       # Step 3: Find and group files
-      files_by_language = EnhancedSpinner.files('Discovering source files by language') do
+      files_by_language = EnhancedSpinner.processing('Finding source files') do
         get_project_files(project_path, project_analysis[:languages_detected])
       end
 
       # Step 4: Review files by language
       total_files = files_by_language.values.flatten.length
-      review_results = EnhancedSpinner.analysis("Reviewing #{total_files} files with AI") do
-        review_files_by_language(files_by_language)
-      end
+      puts "\n🔍 Reviewing #{total_files} files with AI...".cyan
+      review_results = review_files_by_language(files_by_language)
 
       # Step 5: Present comprehensive results
       present_project_review(project_analysis, review_results)
@@ -177,6 +176,8 @@ module MitchAI
     end
 
     def review_files_by_language(files_by_language)
+      require 'tty-spinner'
+      
       results = {}
       total_files = files_by_language.values.flatten.length
       current_file = 0
@@ -185,7 +186,7 @@ module MitchAI
         next if files.empty?
 
         language_sym = language.to_sym
-        puts "\n📋 Reviewing #{language} files (#{files.length} files)...".cyan
+        puts "\n📋 #{language.upcase}: #{files.length} files".cyan
 
         results[language_sym] = {
           files: [],
@@ -201,14 +202,14 @@ module MitchAI
         total_issues = 0
 
         files.each do |file_path|
-          current_file += 1
-          progress = (current_file.to_f / total_files * 100).round(1)
+          filename = File.basename(file_path)
 
-          print "\r   Progress: #{progress}% (#{File.basename(file_path)})".white
+          # Simple spinner for each file
+          spinner = TTY::Spinner.new("   [:spinner] #{filename}", format: :dots)
+          spinner.auto_spin
 
           begin
             content = File.read(file_path, encoding: 'utf-8')
-            puts "📄 Reviewing #{File.basename(file_path)}..." if @verbose
             review_result = review_single_file(file_path, content, language_sym)
 
             if review_result
@@ -219,9 +220,18 @@ module MitchAI
 
               scores << review_result[:score] if review_result[:score]
               total_issues += review_result[:issues]&.length || 0
+              
+              current_file += 1
+              progress = (current_file.to_f / total_files * 100).round(1)
+              spinner.success("(#{progress}%)")
+            else
+              current_file += 1
+              spinner.error
             end
           rescue StandardError => e
-            puts "\n⚠️  Error reviewing #{file_path}: #{e.message}".red if @verbose
+            current_file += 1
+            spinner.error
+            puts "      Error: #{e.message}".red if @verbose
           end
         end
 
@@ -231,8 +241,7 @@ module MitchAI
           results[language_sym][:summary][:total_issues] = total_issues
         end
 
-        print "\r   #{language}: #{files.length} files reviewed ✅".green
-        puts
+        puts "   #{language}: #{files.length} files completed".green
       end
 
       results
